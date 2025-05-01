@@ -10,6 +10,4 @@ COPY ./config/phpMyAdmin/config.inc.php /
 
 # Let's run with our own user for extra security
 RUN groupadd -g 1000 sandboxers && \
-    useradd -u 1000 -g sandboxers -m sandboxer && \
-    # Make the script executable
-    chmod +x /srv/exoscript/phpmyadmin-install.sh
+    useradd -u 1000 -g sandboxers -m sandboxer
