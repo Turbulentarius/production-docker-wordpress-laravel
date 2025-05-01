@@ -1,0 +1,98 @@
+volumes:
+  wpfellesdata: # database
+  wpfelleswww: # www/default data
+  mariadb:
+    driver: local
+services:
+  setup: # A one-time-run setup service for when starting containers. Also, this is the service name which should only be unique to this docker-compose project
+    container_name: sandboxer-wpfelles-setup # The name of the container. Should be unique, possibly prefixed to avoid potential collisions with other containers outside of the project
+    command: /bin/sh /srv/exoscript/setup.sh
+    build:
+      context: ./
+      dockerfile: setup.dockerfile
+    image: sandboxer-setup
+    volumes:
+      - ./host-www:/srv/host-www
+      - wpfelleswww:/srv/sandboxer
+    restart: no
+  db:
+    container_name: sandboxer-wpfelles-db
+    image: mariadb:11.2.4
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: super-secret-and-should-not-be-used
+      MYSQL_USER: laravel
+      MYSQL_PASSWORD: replace-this-with-your-own
+    expose:
+        - "3306"
+    volumes:
+     - wpfellesdata:/var/lib/mysql
+     - ./iedata:/srv/iedata
+    networks:
+      - exo_network_internal
+  php:
+    container_name: sandboxer-wpfelles-php # Name of the container; this is already prefixed with "sandboxer". E.g. run "docker ps" to see what I mean
+    build:
+      context: ./
+      dockerfile: ./php8.2-fpm.dockerfile
+    image: gruppe2wordpress-php # Name of the image to build
+    expose:
+      - "9000" # Expose a port on the virtual network (sandboxer), but do not expose it on the HOST
+    networks:
+      - exo_network_internal
+      - exo_network_external
+    volumes:
+      - wpfelleswww:/srv/sandboxer # Mount a "www" directory on the host that is shared with the web server. E.g. Apache or Nginx
+      - ./log/php:/var/log/php82 # Mount the log file directory to a place on host so we can access the log files
+    environment:
+      PHP_MEMORY_LIMIT: 1024M
+      PHP_UPLOAD_LIMIT: 512M
+      PHP_DISPLAY_ERRORS: 1
+      MYSQL_ROOT_PASSWORD: super-secret-and-should-not-be-used
+      MYSQL_DATABASE: laravel
+      MYSQL_USER: laravel
+      MYSQL_PASSWORD: replace-this-with-your-own
+    restart: unless-stopped
+  apache2:
+    container_name: sandboxer-wpfelles-apache2
+    expose:
+      - "80:80"
+    networks:
+      - exo_network_internal
+      - exo_network_external
+    labels:
+      traefik.enable: true
+      traefik.http.routers.gruppe2wordpress-turbulentarius.entryPoints: 'web'
+      traefik.http.routers.gruppe2wordpress-turbulentarius.rule: 'Host(`gruppe2wordpress.turbulentarius.com`)'
+      traefik.http.middlewares.gruppe2wordpress-turbulentarius-redirect.redirectscheme.scheme: 'https'
+      traefik.http.middlewares.gruppe2wordpress-turbulentarius-redirect.redirectscheme.permanent: true
+      traefik.http.routers.gruppe2wordpress-turbulentarius.middlewares: 'gruppe2wordpress-turbulentarius-redirect, exoheaders'
+      traefik.http.routers.gruppe2wordpress-turbulentarius-secure.middlewares: 'exoheaders, exocors'
+      traefik.http.routers.gruppe2wordpress-turbulentarius-secure.entryPoints: 'websecure'
+      traefik.http.routers.gruppe2wordpress-turbulentarius-secure.rule: 'Host(`gruppe2wordpress.turbulentarius.com`)'
+      traefik.http.routers.gruppe2wordpress-turbulentarius-secure.tls: true
+      traefik.http.routers.gruppe2wordpress-turbulentarius-secure.tls.certresolver: 'letsencrypt'
+      traefik.http.middlewares.exoheaders.headers.stsSeconds: 15552000
+      traefik.http.middlewares.exoheaders.headers.forceSTSHeader: true
+      traefik.http.services.gruppe2wordpress-turbulentarius.loadbalancer.server.port: 80
+      traefik.http.middlewares.exocors.headers.accesscontrolalloworiginlist: 'https://react-wordpress-webshop.vercel.app'
+      traefik.http.middlewares.exocors.headers.accesscontrolallowmethods: 'GET,OPTIONS'
+      traefik.http.middlewares.exocors.headers.accesscontrolallowheaders: 'Content-Type'
+    build:
+      context: ./
+      dockerfile: apache2.dockerfile
+    image: gruppe2wordpress-apache2
+    volumes:
+      - wpfelleswww:/srv/sandboxer
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_started
+      php:
+        condition: service_started
+networks:
+  exo_network_internal:
+    name: exo_network_internal
+    internal: true
+  exo_network_external:
+    name: exo_network_external
