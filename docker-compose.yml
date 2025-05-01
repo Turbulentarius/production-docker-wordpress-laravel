@@ -6,14 +6,14 @@ volumes:
 services:
   setup: # A one-time-run setup service for when starting containers. Also, this is the service name which should only be unique to this docker-compose project
     container_name: sandboxer-wpfelles-setup # The name of the container. Should be unique, possibly prefixed to avoid potential collisions with other containers outside of the project
-    command: /bin/sh /srv/exoscript/setup.sh
+    command: /bin/sh /srv/exoscript/setup.sh # Installs phpMyAdmin and copies the files from host-www into the container's named volume
     build:
       context: ./
       dockerfile: setup.dockerfile
     image: sandboxer-setup
     volumes:
       - ./host-www:/srv/host-www
-      - wpfelleswww:/srv/sandboxer
+      - wpfelleswww:/srv/sandboxer # Mount a shared named volume. This avoids permission issues with bind-mounts in my previous iterations
     restart: no
   db:
     container_name: sandboxer-wpfelles-db
@@ -42,8 +42,8 @@ services:
       - exo_network_internal
       - exo_network_external
     volumes:
-      - wpfelleswww:/srv/sandboxer # Mount a "www" directory on the host that is shared with the web server. E.g. Apache or Nginx
-      - ./log/php:/var/log/php82 # Mount the log file directory to a place on host so we can access the log files
+      - wpfelleswww:/srv/sandboxer
+      # - ./log/php:/var/log/php82 # Mount the log file directory to a place on host so we can access the log files
     environment:
       PHP_MEMORY_LIMIT: 1024M
       PHP_UPLOAD_LIMIT: 512M
@@ -52,7 +52,7 @@ services:
       MYSQL_DATABASE: laravel
       MYSQL_USER: laravel
       MYSQL_PASSWORD: replace-this-with-your-own
-    restart: unless-stopped
+    restart: unless-stopped # I manage my containers with systemd typically, so I don't automatically start containers with docker if stopped
   apache2:
     container_name: sandboxer-wpfelles-apache2
     expose:
